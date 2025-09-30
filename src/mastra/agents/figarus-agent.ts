@@ -1,12 +1,21 @@
 import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
 import { LibSQLStore } from '@mastra/libsql';
-import { DisabledVoice } from '../voice/disabled-voice';
+import {
+  createAnswerRelevancyScorer,
+  createFaithfulnessScorer,
+  createHallucinationScorer,
+  createPromptAlignmentScorerLLM,
+  createToxicityScorer,
+} from '@mastra/evals/scorers/llm';
+import { createCompletenessScorer, createToneScorer } from '@mastra/evals/scorers/code';
 import { ResilientMemory } from '../memory/resilient-memory';
 
 const storage = new LibSQLStore({
   url: 'file:../mastra.db',
 });
+
+const figarusModel = openai('gpt-5-nano');
 
 export const figarusAgent = new Agent({
   name: 'Figarus',
@@ -30,11 +39,40 @@ export const figarusAgent = new Agent({
 
       Always explain any strategic choices (tone shifts, proof points, CTA) in 1-2 brief bullet points after the email so the consultant can justify the approach.
   `,
-  model: openai('gpt-5-nano'),
+  model: figarusModel,
   tools: {},
   memory: new ResilientMemory({
     storage,
     defaultResourceId: 'figarusAgent',
   }),
-  voice: new DisabledVoice(),
+  scorers: {
+    'answer-relevancy': {
+      scorer: createAnswerRelevancyScorer({ model: figarusModel }),
+      sampling: { type: 'ratio', rate: 0.5 },
+    },
+    faithfulness: {
+      scorer: createFaithfulnessScorer({ model: figarusModel }),
+      sampling: { type: 'ratio', rate: 0.5 },
+    },
+    hallucination: {
+      scorer: createHallucinationScorer({ model: figarusModel }),
+      sampling: { type: 'ratio', rate: 0.5 },
+    },
+    completeness: {
+      scorer: createCompletenessScorer(),
+      sampling: { type: 'ratio', rate: 0.25 },
+    },
+    'prompt-alignment': {
+      scorer: createPromptAlignmentScorerLLM({ model: figarusModel }),
+      sampling: { type: 'ratio', rate: 0.25 },
+    },
+    toxicity: {
+      scorer: createToxicityScorer({ model: figarusModel }),
+      sampling: { type: 'ratio', rate: 1 },
+    },
+    'tone-consistency': {
+      scorer: createToneScorer(),
+      sampling: { type: 'ratio', rate: 0.25 },
+    },
+  },
 });
